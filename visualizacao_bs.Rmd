@@ -1,0 +1,281 @@
+---
+title: "bs"
+output: html_document
+---
+
+```{r}
+
+install.packages("bsgof")
+install.packages("ggplot2")
+
+library(bsgof)
+library(ggplot2)
+```
+
+```{r}
+
+alpha <- 0.5
+beta  <- 1.5
+
+t <- seq(0.01, 8, length.out = 1000)
+
+f <- dbs(t, alpha = alpha, beta = beta)
+
+plot(
+  t, f,
+  type = "l",
+  lwd = 2,
+  xlab = "t",
+  ylab = "f(t)",
+  main = "Densidade Birnbaum-Saunders"
+)
+```
+
+```{r}
+
+F <- pbs(t, alpha = alpha, beta = beta)
+
+plot(
+  t, F,
+  type = "l",
+  lwd = 2,
+  xlab = "t",
+  ylab = "F(t)",
+  main = "Função de distribuição acumulada"
+)
+```
+
+```{r}
+
+# na notação do artigo 
+# alpha = sigma (forma) e beta = mu (escala)
+
+gera_bs <- function(y, params) {
+  dados <- do.call(rbind, lapply(1:nrow(params), function(i) {
+    
+    mu_i <- params$mu[i]
+    sigma_i <- params$sigma[i]
+    
+    data.frame(
+      y = y,
+      densidade = dbs(y, alpha = sigma_i, beta = mu_i),
+      acumulada = pbs(y, alpha = sigma_i, beta = mu_i),
+      parametro = paste0("mu = ", mu_i, ", sigma = ", sigma_i)
+    )
+  }))
+  
+  return(dados)
+}
+```
+
+### Variando sigma, mantendo mu
+
+```{r}
+
+y <- seq(0.001, 8, length.out = 1000)
+
+params_sigma <- data.frame(
+  mu = 1,
+  sigma = c(0.25, 0.5, 0.75, 1, 1.5)
+)
+
+dados_sigma <- gera_bs(y, params_sigma)
+```
+
+```{r}
+
+ggplot(dados_sigma, aes(x = y, y = densidade, color = parametro)) +
+  geom_line(linewidth = 1) +
+  labs(
+    title = "Densidade Birnbaum-Saunders variando sigma",
+    x = "y",
+    y = "f(y)",
+    color = "Parâmetros"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+
+ggplot(dados_sigma, aes(x = y, y = acumulada, color = parametro)) +
+  geom_line(linewidth = 1) +
+  labs(
+    title = "FDA Birnbaum-Saunders variando sigma",
+    x = "y",
+    y = "F(y)",
+    color = "Parâmetros"
+  ) +
+  theme_minimal()
+```
+
+### Variando mu mantendo sigma fixo
+
+```{r}
+
+params_mu <- data.frame(
+  mu = c(0.5, 1, 2, 4),
+  sigma = 0.5
+)
+
+dados_mu <- gera_bs(y, params_mu)
+```
+
+```{r}
+
+ggplot(dados_mu, aes(x = y, y = densidade, color = parametro)) +
+  geom_line(linewidth = 1) +
+  labs(
+    title = "Densidade Birnbaum-Saunders variando mu",
+    x = "y",
+    y = "f(y)",
+    color = "Parâmetros"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+
+ggplot(dados_mu, aes(x = y, y = acumulada, color = parametro)) +
+  geom_line(linewidth = 1) +
+  labs(
+    title = "FDA Birnbaum-Saunders variando mu",
+    x = "y",
+    y = "F(y)",
+    color = "Parâmetros"
+  ) +
+  theme_minimal()
+```
+
+## Birnbaum Saunders Reparametrizada
+
+```{r}
+
+# mu (escala) e delta minusculo (forma)
+
+pdf_RPBS <- function(t,dt,mu){
+  a <- (exp(dt/2)*sqrt(dt+1))/(4*(t^(3/2))*sqrt(pi*mu))
+  b <- (t + (dt*mu)/(dt+1))
+  c <- exp(-(dt/4)*((t*(dt+1))/(dt*mu) + (dt*mu)/(t*(dt+1))))
+  pdf <- a*b*c
+  return(pdf)
+}
+```
+
+```{r}
+
+sf_RPBS <- function(t,dt,mu){
+  a <- ( t+dt*(t-mu) )/( 2*sqrt(t*mu*(1+dt)) )
+  sf <- 0.5*pnorm(a, lower.tail = FALSE)
+  return(sf)
+}
+
+F_RPBS <- function(t, dt, mu) {
+  1 - sf_RPBS(t, dt, mu)
+}
+```
+
+```{r}
+
+hazard_RPBS <- function(t, dt, mu) {
+  pdf_RPBS(t, dt, mu) / sf_RPBS(t, dt, mu)
+}
+```
+
+```{r}
+
+# na notação do artigo 
+# alpha = sigma (forma) e beta = mu (escala)
+
+gera_rbs <- function(y, params) {
+  dados <- do.call(rbind, lapply(1:nrow(params), function(i) {
+    
+    mu_i <- params$mu[i]
+    delta_i <- params$delta[i]
+    
+    data.frame(
+      y = y,
+      densidade = pdf_RPBS(y, dt = delta_i, mu = mu_i),
+      acumulada = F_RPBS(y, dt = delta_i, mu = mu_i),
+      hazard = hazard_RPBS(y, dt = delta_i, mu = mu_i),
+      
+      parametro = paste0("mu = ", mu_i, ", delta = ", delta_i)
+    )
+  }))
+  
+  return(dados)
+}
+```
+
+```{r}
+
+params_mu <- data.frame(
+  mu = c(0.5, 1, 2, 4),
+  delta = 1
+)
+
+dados_mu <- gera_rbs(y, params_mu)
+```
+
+```{r}
+
+ggplot(dados_mu, aes(x = y, y = densidade, color = parametro)) +
+  geom_line(linewidth = 1) +
+  labs(
+    title = "Densidade Birnbaum-Saunders Reparametrizada variando mu",
+    x = "y",
+    y = "f(y)",
+    color = "Parâmetros"
+  ) +
+  theme_minimal() + coord_cartesian(xlim = c(0, 1))
+```
+
+```{r}
+
+y <- seq(0.001, 8, length.out = 1000)
+
+params_sigma <- data.frame(
+  mu = 1,
+  delta = c(0.25, 0.5, 0.75, 1, 1.5, 5)
+)
+
+dados_delta <- gera_rbs(y, params_sigma)
+```
+
+```{r}
+
+ggplot(dados_delta, aes(x = y, y = densidade, color = parametro)) +
+  geom_line(linewidth = 1) +
+  labs(
+    title = "Densidade Birnbaum-Saunders Reparametrizada variando forma",
+    x = "y",
+    y = "f(y)",
+    color = "Parâmetros"
+  ) +
+  theme_minimal() + coord_cartesian(xlim = c(0, 1))
+```
+
+```{r}
+
+ggplot(dados_delta, aes(x = y, y = acumulada, color = parametro)) +
+  geom_line(linewidth = 1) +
+  labs(
+    title = "FDA de Birnbaum-Saunders Reparametrizada variando forma",
+    x = "y",
+    y = "f(y)",
+    color = "Parâmetros"
+  ) +
+  theme_minimal() + coord_cartesian(xlim = c(0, 7.5))
+```
+
+```{r}
+
+ggplot(dados_delta, aes(x = y, y = hazard, color = parametro)) +
+  geom_line(linewidth = 1) +
+  labs(
+    title = "Hazard Birnbaum-Saunders Reparametrizada variando a forma",
+    x = "y",
+    y = "f(y)",
+    color = "Parâmetros"
+  ) +
+  theme_minimal() + coord_cartesian(xlim = c(0, 2.5))
+```
