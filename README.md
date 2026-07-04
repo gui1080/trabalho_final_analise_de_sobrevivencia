@@ -4,6 +4,10 @@ Repositório para trabalho final da matéria Análise de Sobrevivência, como pa
 
 Link para o repositório: https://github.com/gui1080/trabalho_final_analise_de_sobrevivencia
 
+## Arquivos
+
+No notebook *visualizacao_bs.Rmd* tem visualizações simples da Birnbaum-Saunders, junto da instanciação de sua reparametrização.
+
 ## Fonte do Dataset
 
 Feigl, P. and Zelen, M. (1965) Estimation of exponential survival probabilities with concomitant information. Biometrics, 21(4), 826-838. 
