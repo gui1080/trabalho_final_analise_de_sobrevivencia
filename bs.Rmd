@@ -1,42 +1,53 @@
 ---
-title: "bs"
+title: "bs_extrafail_package"
 output: html_document
 ---
 
 ```{r}
 
-install.packages("bsgof")
+install.packages(
+  "https://cran.r-project.org/src/contrib/Archive/gbs/gbs_1.0.tar.gz",
+  repos = NULL,
+  type = "source"
+)
 ```
 
 ```{r}
 
-library(bsgof)
 library(MASS)
 library(survival)
-#library(gbs)
+library(gbs)
 library(stats)
 library(stats4)
 library(boot)
 library(locfit)
 library(flexsurv)
+library(numDeriv)
 library(lattice)
 library(HSAUR)
-```
 
-### Unconditional Survival Function of the BS frailty model
 
-```{r}
+
+##################################################################
+##################################################################
+# Estimation of parameters in BS Frailty model
+# with Exponential baseline distribution
+##################################################################
+##################################################################
+
+##################################################################
+## Unconditional Survival Function of the BS frailty model
+##################################################################
 
 uncsurv_BS <- function(t,delta,lambda){
   st <- (exp( (delta/2)*( 1 - sqrt((delta+4*lambda*t+1)/(delta+1)) ) )*(sqrt(delta+1) + sqrt((delta+4*lambda*t+1)) ))/(2*sqrt(delta+4*lambda*t+1))
   
   return(st)
 }
-```
 
-### Unconditional Hazard Function of the BS frailty model
-
-```{r}
+##################################################################
+## Unconditional Hazard Function of the BS frailty model
+##################################################################
 
 unchazd_BS <- function(t,delta,lambda){
   
@@ -45,50 +56,42 @@ unchazd_BS <- function(t,delta,lambda){
   return(ht)
   
 }
-```
 
-### Log Likelihood Function of BS Frailty Model (Exp - baseline)
-
-```{r}
+##################################################################
+## Log Likelihood Function of BS Frailty Model (Exp - baseline)
+##################################################################
 
 log.lik_BS <- function(par,x,cens){
   
   delta   <- par[1]
   lambda  <- par[2]
-  bad     <- 1e100
-
-  if (any(!is.finite(c(delta,lambda))) || delta <= 0 || lambda <= 0) {
-    return(bad)
-  }
-
-  sf <- uncsurv_BS(t=x,delta=delta,lambda=lambda)
-  hz <- unchazd_BS(t=x,delta=delta,lambda=lambda)
-
-  if (any(!is.finite(sf)) || any(!is.finite(hz)) || any(sf <= 0) || any(hz <= 0)) {
-    return(bad)
-  }
   
-  loglik <- sum(log(sf)) + sum(cens*log(hz))
-
-  if (!is.finite(loglik)) {
-    return(bad)
-  }
+  loglik <- sum( cens*log( unchazd_BS(t=x,delta=delta,lambda=lambda) ) ) + sum( log( uncsurv_BS(t=x,delta=delta,lambda=lambda) ) )
   
   return (-loglik)
 }
 
 log.lik_BSHE <- function(par,y,cens){
   
-  loglik <- -log.lik_BS(par=par,x=y,cens=cens)
+  delta   <- par[1]
+  lambda  <- par[2]
+  
+  loglik <- sum( cens*log( unchazd_BS(t=y,delta=delta,lambda=lambda) ) ) + sum( log( uncsurv_BS(t=y,delta=delta,lambda=lambda) ) )
   
   return (loglik)
 }
 
-```
 
-### Cumulative Hazard Rate baseline - Weibull
+##################################################################
+##################################################################
+# Estimation of parameters in BS Frailty model
+# with Weibull baseline distribution
+##################################################################
+##################################################################
 
-```{r}
+##################################################################
+# # Cumulative Hazard Rate baseline - Weibull
+##################################################################
 
 CHR_base <- function(t,alpha,eta){
   
@@ -96,22 +99,20 @@ CHR_base <- function(t,alpha,eta){
   
   return(chr)
 }
-```
-
-### Hazard Rate baseline - Weibull
-
-```{r}
+##################################################################
+# Hazard Rate baseline - Weibull
+##################################################################
 
 HR_base <- function(t,alpha,eta){
   
   hr <- (eta*(t^(eta-1)))/(alpha^eta)
   return(hr)
 }
-```
 
-### Unconditional survival function of BS frailty
-
-```{r}
+##################################################################
+# Unconditional survival
+# function of BS frailty
+##################################################################
 
 unc_sf <- function(t,alpha,eta,delta){
   
@@ -125,11 +126,10 @@ unc_sf <- function(t,alpha,eta,delta){
   
 }
 
-```
-
-### Unconditional hazard rate of BS frailty
-
-```{r}
+###################################
+# Unconditional hazard
+# rate of BS frailty
+###################################
 
 unc_hz <- function(t,alpha,eta,delta){
   
@@ -141,127 +141,192 @@ unc_hz <- function(t,alpha,eta,delta){
   return(uhr)
   
 }
-```
 
-### Log Likelihood Function of BS Frailty Model (Weibull)
 
-```{r}
+####################################################
+# Log Likelihood Function of BS Frailty Model
+####################################################
 
 log.lik_BS_weibull <- function(par,x,cens){
   
   alpha  <- par[1]
   eta    <- par[2]
   delta  <- par[3]
-  bad    <- 1e100
-
-  if (any(!is.finite(c(alpha,eta,delta))) || alpha <= 0 || eta <= 0 || delta <= 0) {
-    return(bad)
-  }
   
-  sf <- unc_sf(t=x,alpha=alpha,eta=eta,delta=delta)
-  hz <- unc_hz(t=x,alpha=alpha,eta=eta,delta=delta)
-
-  if (any(!is.finite(sf)) || any(!is.finite(hz)) || any(sf <= 0) || any(hz <= 0)) {
-    return(bad)
-  }
   
-  loglik <- sum(log(sf)) + sum(cens*log(hz))
-
-  if (!is.finite(loglik)) {
-    return(bad)
-  }
+  loglik <- sum( log( unc_sf(t=x,alpha=alpha,eta=eta,delta=delta) ) ) + sum( cens*log( unc_hz(t=x,alpha=alpha,eta=eta,delta=delta) ) )
   
   return (-loglik)
 }
 
 log.lik_BS_weibullHE <- function(par,y,cens){
   
-  loglik <- -log.lik_BS_weibull(par=par,x=y,cens=cens)
+  alpha  <- par[1]
+  eta    <- par[2]
+  delta  <- par[3]
+  
+  
+  loglik <- sum( log( unc_sf(t=y,alpha=alpha,eta=eta,delta=delta) ) ) + sum( cens*log( unc_hz(t=y,alpha=alpha,eta=eta,delta=delta) ) )
   
   return (loglik)
 }
-```
 
-# Dados
+##################################################################
+##################################################################
 
-```{r}
 
-data(veteran, package = "survival")
+##################################################################
+# Unconditional survival
+# function of BS frailty - Log-Normal
+##################################################################
 
-times <- veteran$time
-status <- as.numeric(veteran$status == 2) # 0 = censurado e 1 = evento
-```
+unc_sf_logn <- function(t,delta,pmu,psig){
+  
+  a <- sqrt(delta+4*Hlnorm(t, meanlog=pmu, sdlog=psig, log=FALSE)+1)
+  b <- (delta/2)*(1 - (a/sqrt(delta+1)) )
+  c <- a + sqrt(delta + 1)
+  
+  usf <- (exp(b)*c)/(2*a)
+  
+  return(usf)
+  
+}
 
-# Estimando - BS frailty Exponential
+##################################################################
+# Unconditional hazard
+# rate of BS frailty
+##################################################################
 
-```{r}
+unc_hz_logn <- function(t,delta,pmu,psig){
+  
+  a <- delta*(delta + sqrt( (delta+4*Hlnorm(x=t, meanlog=pmu, sdlog=psig, log=FALSE)+1)*(delta+1) ) + 4*Hlnorm(x=t, meanlog=pmu, sdlog=psig, log=FALSE) + 3) + 2
+  b <- (delta + sqrt( (delta+4*Hlnorm(x=t, meanlog=pmu, sdlog=psig, log=FALSE)+1)*(delta+1) ) + 1)
+  
+  uhr <- ( (hlnorm(x=t, meanlog=pmu, sdlog=psig, log=FALSE))*a )/ ( (delta+4*Hlnorm(x=t, meanlog=pmu, sdlog=psig, log=FALSE)+1)*b )
+  
+  return(uhr)
+  
+}
 
-epsilon <- 1e-08
 
-# Chutes iniciais
-chuteDelta  <- 1
-chuteLambda <- sum(status)/sum(times)
+####################################################
+# Log Likelihood Function of BS Frailty Model
+####################################################
 
-# Estimativas de maxima verossimilhanca
-est_BS <- optim(
-  par = c(delta=chuteDelta,lambda=chuteLambda),
-  fn = log.lik_BS,
-  x = times,
-  cens = status,
-  method = "L-BFGS-B",
-  lower = c(delta=epsilon,lambda=epsilon)
-)
+log.lik_BS_logn <- function(par,x,cens){
+  
+  delta  <- par[1]
+  pmu    <- par[2]
+  psig   <- par[3]
+  
+  
+  loglik <- sum( log( unc_sf_logn(t=x,delta=delta,pmu=pmu,psig=psig) ) ) + sum( cens*log( unc_hz_logn(t=x,delta=delta,pmu=pmu,psig=psig) ) )
+  
+  return (-loglik)
+}
 
-est_BS$convergence
+log.lik_BS_lognHLN <- function(par,y,cens){
+  
+  alpha  <- par[1]
+  eta    <- par[2]
+  delta  <- par[3]
+  
+  
+  loglik <- sum( log( unc_sf(t=y,alpha=alpha,eta=eta,delta=delta) ) ) + sum( cens*log( unc_hz(t=y,alpha=alpha,eta=eta,delta=delta) ) )
+  
+  return (loglik)
+}
 
-hatdelta  <- est_BS$par["delta"]
-hatlambda <- est_BS$par["lambda"]
 
-print("hatdelta")
-hatdelta
-print("hatlambda")
-hatlambda
+## computes TTT plot and Barlow-Proschan's test for censored and uncensored data set
+TTTplot <- function(time,cens=NULL)
+{
+  n <- length(time)
+  oo <- order(time)
+  if(is.null(cens)) cens = rep(1,n)
+  sorttime <- time[oo]
+  sortcens <- cens[oo]
+  ttt <- numeric(n)
+  ttt[1] <- n*sorttime[1]
+  for(i in 2:n)
+  {
+    ttt[i] <- ttt[i-1]+(n-i+1)*(sorttime[i]-sorttime[i-1])
+  }
+  ttt <- data.frame(time=sorttime,cens = sortcens,
+                    rank=1:n,"cum total time"=ttt)
+  colnames(ttt) <- c("time","cens","rank","Cum.Total.Time")#,"i/n","TTT")
+  
+  TTT <- ttt[ttt$cens==1,]
+  nfail <- dim(TTT)[1]
+  TTT <- cbind(TTT[,-3],TTT$Cum.Total.Time/TTT$Cum.Total.Time[nfail],
+               (1:nfail)/nfail)
+  colnames(TTT) <- c("time","cens","Cum.Total.Time","TTT","i/n")
+  
+  
+  
+  W <- sum(TTT$"Cum.Total.Time"[1:(nfail-1)])/TTT$"Cum.Total.Time"[nfail]
+  Z <- (W-(nfail-1)/2)/sqrt((nfail-1)/12)
+  print(TTT)
+  cat("Barlow-Proschan's test\n")
+  cat(paste("W=",round(W,4)," k=",nfail,"\n",sep=""))
+  cat(paste("Z=",round(Z,4)," p.value=",round(pnorm(-abs(Z)),4),"\n",sep=""))
+  
+  postscript("/home/jeremias/Desktop/TTT2.eps",family="Times",width=3.2,height=3.2,paper="a4",pointsize=8)
+  par(mar=c(3.9,4.2,1.4,0.5),mgp=c(2.4, 1, 0)) 
+  #plot(TTT$"i/n",TTT$TTT,xlab="i/n",ylab="TTT",xlim=c(0,1),
+  #     ylim=c(0,1),pch=19, main="TTT plot",sub=paste("N. failure = ",nfail," N. censored = ", n-nfail,sep=""))
+  plot(TTT$"i/n",TTT$TTT,xlab="i/n",ylab="tt",xlim=c(0,1),type="l",
+       ylim=c(0,1),main="",lwd=2)
+  lines(c(0,1),c(0,1),lty=2)
+  #    return(list(TTT=TTT,W=W,Z=Z))
+  dev.off()
+}
 
-loglik_BS <- -est_BS$value
-loglik_BS
 
-```
+# Reading Data Application 2  
 
-# Estimando - BS frailty Weibull
+data("cancer",package="survival")
 
-```{r}
+times = veteran$time
+status = veteran$status
 
-epsilon <- 1e-08
 
-# Chutes iniciais
-chuteAlpha <- median(times)
-chuteEta   <- 1
-chuteDelta <- 1
 
-# Estimativas de maxima verossimilhanca
-est_BS_Weibull <- optim(
-  par = c(alpha=chuteAlpha,eta=chuteEta,delta=chuteDelta),
-  fn = log.lik_BS_weibull,
-  x = times,
-  cens = status,
-  method = "L-BFGS-B",
-  lower = c(alpha=epsilon,eta=epsilon,delta=epsilon)
-)
+#TTTplot(time=times,cens=status)
+#ekm <- survfit(Surv(times,status)~1,conf.int = FALSE)
+#plot(ekm,xlab="t", ylab="st")
 
-est_BS_Weibull$convergence
+## 1
+# Estimatin parameter values of BS frailty Exponential
+esti_BS <- mlebs(times)
+chuteDelta  <- 2/(esti_BS$alphabsEstimate^2);chuteDelta
+chuteLambda <- fitdistr(times,densfun="exponential")
+chuteLambda <- as.numeric(chuteLambda$estimate[1]);chuteLambda
 
-hatalpha <- est_BS_Weibull$par["alpha"]
-hateta   <- est_BS_Weibull$par["eta"]
-hatdelta <- est_BS_Weibull$par["delta"]
+# Obtaining the results
+est_BS   <- optim(c(chuteDelta,chuteLambda),log.lik_BS,x=times,method="CG",cens=status)
+hatdelta  <- est_BS$par[1];hatdelta
+hatlambda <- est_BS$par[2];hatlambda
 
-print("hatalpha")
-hatalpha
-print("hateta")
-hateta
-print("hatdelta")
-hatdelta
+# Estimated frailty variance
+vnu1 <-(2*hatdelta+5)/(hatdelta+1)^2;vnu1
 
-loglik_BS_weibull <- -est_BS_Weibull$value
-loglik_BS_weibull
+# AIC and BIC
+aic1_BS <-    -2*(-log.lik_BS(c(hatdelta,hatlambda),times,status)) + 2*2;aic1_BS
+bic1_BS <-    -2*(-log.lik_BS(c(hatdelta,hatlambda),times,status)) + 2*log(length(times));bic1_BS
 
+-log.lik_BS(c(hatdelta,hatlambda),times,status)
+
+## SEs  
+valueH    <- -hessian(func=log.lik_BSHE,x=c(hatdelta,hatlambda),y=times,cens=status)
+Hess      <- solve(valueH)
+SE        <- sqrt(diag(Hess))
+
+se.coef = SE
+tval = est_BS$par/se.coef
+matcoef = cbind(c(est_BS$par), se.coef, tval, 2*(1-pnorm(abs(tval))))
+dimnames(matcoef) = list(names(tval), c(" Estimate",
+                                        " Std. Error", " t value", "Pr(>|t|)"))
+cat("\nCoefficient(s):\n")
+printCoefmat(matcoef, digits = 6, signif.stars = TRUE) 
 ```
