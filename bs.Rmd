@@ -1,0 +1,267 @@
+---
+title: "bs"
+output: html_document
+---
+
+```{r}
+
+install.packages("bsgof")
+```
+
+```{r}
+
+library(bsgof)
+library(MASS)
+library(survival)
+#library(gbs)
+library(stats)
+library(stats4)
+library(boot)
+library(locfit)
+library(flexsurv)
+library(lattice)
+library(HSAUR)
+```
+
+### Unconditional Survival Function of the BS frailty model
+
+```{r}
+
+uncsurv_BS <- function(t,delta,lambda){
+  st <- (exp( (delta/2)*( 1 - sqrt((delta+4*lambda*t+1)/(delta+1)) ) )*(sqrt(delta+1) + sqrt((delta+4*lambda*t+1)) ))/(2*sqrt(delta+4*lambda*t+1))
+  
+  return(st)
+}
+```
+
+### Unconditional Hazard Function of the BS frailty model
+
+```{r}
+
+unchazd_BS <- function(t,delta,lambda){
+  
+  ht <- lambda*( delta*( delta + sqrt( (delta+1)*(delta+4*lambda*t+1) ) + 4*lambda*t + 3 ) + 2 )/( (delta+4*lambda*t+1)*( delta + sqrt( (delta+1)*(delta+4*lambda*t+1) ) + 1) )
+  
+  return(ht)
+  
+}
+```
+
+### Log Likelihood Function of BS Frailty Model (Exp - baseline)
+
+```{r}
+
+log.lik_BS <- function(par,x,cens){
+  
+  delta   <- par[1]
+  lambda  <- par[2]
+  bad     <- 1e100
+
+  if (any(!is.finite(c(delta,lambda))) || delta <= 0 || lambda <= 0) {
+    return(bad)
+  }
+
+  sf <- uncsurv_BS(t=x,delta=delta,lambda=lambda)
+  hz <- unchazd_BS(t=x,delta=delta,lambda=lambda)
+
+  if (any(!is.finite(sf)) || any(!is.finite(hz)) || any(sf <= 0) || any(hz <= 0)) {
+    return(bad)
+  }
+  
+  loglik <- sum(log(sf)) + sum(cens*log(hz))
+
+  if (!is.finite(loglik)) {
+    return(bad)
+  }
+  
+  return (-loglik)
+}
+
+log.lik_BSHE <- function(par,y,cens){
+  
+  loglik <- -log.lik_BS(par=par,x=y,cens=cens)
+  
+  return (loglik)
+}
+
+```
+
+### Cumulative Hazard Rate baseline - Weibull
+
+```{r}
+
+CHR_base <- function(t,alpha,eta){
+  
+  chr <- (t/alpha)^eta
+  
+  return(chr)
+}
+```
+
+### Hazard Rate baseline - Weibull
+
+```{r}
+
+HR_base <- function(t,alpha,eta){
+  
+  hr <- (eta*(t^(eta-1)))/(alpha^eta)
+  return(hr)
+}
+```
+
+### Unconditional survival function of BS frailty
+
+```{r}
+
+unc_sf <- function(t,alpha,eta,delta){
+  
+  a <- sqrt(delta+4*CHR_base(t,alpha,eta)+1)
+  b <- (delta/2)*(1 - (a/sqrt(delta+1)) )
+  c <- a + sqrt(delta + 1)
+  
+  usf <- (exp(b)*c)/(2*a)
+  
+  return(usf)
+  
+}
+
+```
+
+### Unconditional hazard rate of BS frailty
+
+```{r}
+
+unc_hz <- function(t,alpha,eta,delta){
+  
+  a <- delta*(delta + sqrt( (delta+4*CHR_base(t,alpha,eta)+1)*(delta+1) ) + 4*CHR_base(t,alpha,eta) + 3) + 2
+  b <- (delta + sqrt( (delta+4*CHR_base(t,alpha,eta)+1)*(delta+1) ) + 1)
+  
+  uhr <- ( (HR_base(t,alpha,eta))*a )/ ( (delta+4*CHR_base(t,alpha,eta)+1)*b )
+  
+  return(uhr)
+  
+}
+```
+
+### Log Likelihood Function of BS Frailty Model (Weibull)
+
+```{r}
+
+log.lik_BS_weibull <- function(par,x,cens){
+  
+  alpha  <- par[1]
+  eta    <- par[2]
+  delta  <- par[3]
+  bad    <- 1e100
+
+  if (any(!is.finite(c(alpha,eta,delta))) || alpha <= 0 || eta <= 0 || delta <= 0) {
+    return(bad)
+  }
+  
+  sf <- unc_sf(t=x,alpha=alpha,eta=eta,delta=delta)
+  hz <- unc_hz(t=x,alpha=alpha,eta=eta,delta=delta)
+
+  if (any(!is.finite(sf)) || any(!is.finite(hz)) || any(sf <= 0) || any(hz <= 0)) {
+    return(bad)
+  }
+  
+  loglik <- sum(log(sf)) + sum(cens*log(hz))
+
+  if (!is.finite(loglik)) {
+    return(bad)
+  }
+  
+  return (-loglik)
+}
+
+log.lik_BS_weibullHE <- function(par,y,cens){
+  
+  loglik <- -log.lik_BS_weibull(par=par,x=y,cens=cens)
+  
+  return (loglik)
+}
+```
+
+# Dados
+
+```{r}
+
+data(veteran, package = "survival")
+
+times <- veteran$time
+status <- as.numeric(veteran$status == 2) # 0 = censurado e 1 = evento
+```
+
+# Estimando - BS frailty Exponential
+
+```{r}
+
+epsilon <- 1e-08
+
+# Chutes iniciais
+chuteDelta  <- 1
+chuteLambda <- sum(status)/sum(times)
+
+# Estimativas de maxima verossimilhanca
+est_BS <- optim(
+  par = c(delta=chuteDelta,lambda=chuteLambda),
+  fn = log.lik_BS,
+  x = times,
+  cens = status,
+  method = "L-BFGS-B",
+  lower = c(delta=epsilon,lambda=epsilon)
+)
+
+est_BS$convergence
+
+hatdelta  <- est_BS$par["delta"]
+hatlambda <- est_BS$par["lambda"]
+
+print("hatdelta")
+hatdelta
+print("hatlambda")
+hatlambda
+
+loglik_BS <- -est_BS$value
+loglik_BS
+
+```
+
+# Estimando - BS frailty Weibull
+
+```{r}
+
+epsilon <- 1e-08
+
+# Chutes iniciais
+chuteAlpha <- median(times)
+chuteEta   <- 1
+chuteDelta <- 1
+
+# Estimativas de maxima verossimilhanca
+est_BS_Weibull <- optim(
+  par = c(alpha=chuteAlpha,eta=chuteEta,delta=chuteDelta),
+  fn = log.lik_BS_weibull,
+  x = times,
+  cens = status,
+  method = "L-BFGS-B",
+  lower = c(alpha=epsilon,eta=epsilon,delta=epsilon)
+)
+
+est_BS_Weibull$convergence
+
+hatalpha <- est_BS_Weibull$par["alpha"]
+hateta   <- est_BS_Weibull$par["eta"]
+hatdelta <- est_BS_Weibull$par["delta"]
+
+print("hatalpha")
+hatalpha
+print("hateta")
+hateta
+print("hatdelta")
+hatdelta
+
+loglik_BS_weibull <- -est_BS_Weibull$value
+loglik_BS_weibull
+
+```
