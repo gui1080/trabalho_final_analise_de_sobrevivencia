@@ -1,0 +1,75 @@
+---
+title: "ttt"
+output: html_document
+---
+
+```{r}
+
+library(survival)
+library(ggplot2)
+
+```
+
+```{r}
+
+data("cancer",package="survival")
+
+times  <- veteran$time
+status <- veteran$status
+```
+
+```{r}
+
+time
+status
+```
+
+```{r}
+
+ttt_plot <- function(times, status) {
+  
+  x <- sort(times[status == 1])
+  n <- length(x)
+  
+  i <- seq_len(n)
+  
+  ttt_y <- (cumsum(x) + (n - i) * x) / sum(x)
+  ttt_x <- i / n
+  
+  plot(
+    ttt_x, ttt_y,
+    type = "l",
+    lwd = 2,
+    xlab = expression(r/n),
+    ylab = expression(phi(r/n)),
+    main = "TTT plot"
+  )
+  
+  abline(0, 1, lty = 2, col = "gray40")
+  
+  points(ttt_x, ttt_y, pch = 16, cex = 0.6)
+}
+```
+
+```{r}
+
+x <- sort(times[status == 1])
+n <- length(x)
+i <- seq_len(n)
+
+ttt_data <- data.frame(
+  prop = i / n,
+  ttt = (cumsum(x) + (n - i) * x) / sum(x)
+)
+
+ggplot(ttt_data, aes(x = prop, y = ttt)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 1.5) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  labs(
+    #title = "TTT plot",
+    x = "Proporção acumulada de falhas",
+    y = "Tempo total em teste padronizado"
+  ) +
+  theme_minimal()
+```

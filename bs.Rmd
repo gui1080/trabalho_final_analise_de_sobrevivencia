@@ -9,6 +9,11 @@ LEÃO, Jeremias; LEIVA, Víctor; SAULO, Helton; TOMAZELLA, Vera. A survival mode
 
 ```{r}
 
+options(warn = -1)
+```
+
+```{r}
+
 install.packages(
   "https://cran.r-project.org/src/contrib/Archive/gbs/gbs_1.0.tar.gz",
   repos = NULL,
@@ -278,68 +283,12 @@ log.lik_BS_lognHLN <- function(par,y,cens){
 
 ```{r}
 
-## computes TTT plot and Barlow-Proschan's test for censored and uncensored data set
-TTTplot <- function(time,cens=NULL)
-{
-  n <- length(time)
-  oo <- order(time)
-  if(is.null(cens)) cens = rep(1,n)
-  sorttime <- time[oo]
-  sortcens <- cens[oo]
-  ttt <- numeric(n)
-  ttt[1] <- n*sorttime[1]
-  for(i in 2:n)
-  {
-    ttt[i] <- ttt[i-1]+(n-i+1)*(sorttime[i]-sorttime[i-1])
-  }
-  ttt <- data.frame(time=sorttime,cens = sortcens,
-                    rank=1:n,"cum total time"=ttt)
-  colnames(ttt) <- c("time","cens","rank","Cum.Total.Time")#,"i/n","TTT")
-  
-  TTT <- ttt[ttt$cens==1,]
-  nfail <- dim(TTT)[1]
-  TTT <- cbind(TTT[,-3],TTT$Cum.Total.Time/TTT$Cum.Total.Time[nfail],
-               (1:nfail)/nfail)
-  colnames(TTT) <- c("time","cens","Cum.Total.Time","TTT","i/n")
-  
-  
-  
-  W <- sum(TTT$"Cum.Total.Time"[1:(nfail-1)])/TTT$"Cum.Total.Time"[nfail]
-  Z <- (W-(nfail-1)/2)/sqrt((nfail-1)/12)
-  print(TTT)
-  cat("Barlow-Proschan's test\n")
-  cat(paste("W=",round(W,4)," k=",nfail,"\n",sep=""))
-  cat(paste("Z=",round(Z,4)," p.value=",round(pnorm(-abs(Z)),4),"\n",sep=""))
-  
-  postscript("/home/jeremias/Desktop/TTT2.eps",family="Times",width=3.2,height=3.2,paper="a4",pointsize=8)
-  par(mar=c(3.9,4.2,1.4,0.5),mgp=c(2.4, 1, 0)) 
-  #plot(TTT$"i/n",TTT$TTT,xlab="i/n",ylab="TTT",xlim=c(0,1),
-  #     ylim=c(0,1),pch=19, main="TTT plot",sub=paste("N. failure = ",nfail," N. censored = ", n-nfail,sep=""))
-  plot(TTT$"i/n",TTT$TTT,xlab="i/n",ylab="tt",xlim=c(0,1),type="l",
-       ylim=c(0,1),main="",lwd=2)
-  lines(c(0,1),c(0,1),lty=2)
-  #    return(list(TTT=TTT,W=W,Z=Z))
-  dev.off()
-}
-
-```
-
-```{r}
-
 # Reading Data Application 2  
 
 data("cancer",package="survival")
 
 times = veteran$time
 status = veteran$status
-
-```
-
-```{r}
-
-TTTplot(time=times,cens=status)
-ekm <- survfit(Surv(times,status)~1,conf.int = FALSE)
-plot(ekm,xlab="t", ylab="st")
 
 ```
 
@@ -378,4 +327,152 @@ dimnames(matcoef) = list(names(tval), c(" Estimate",
                                         " Std. Error", " t value", "Pr(>|t|)"))
 cat("\nCoefficient(s):\n")
 printCoefmat(matcoef, digits = 6, signif.stars = TRUE) 
+```
+
+```{r}
+
+## 2
+# Estimatin parameter values of BS frailty Weibul
+esti_BS     <- mlebs(times)
+chuteDelta  <- 2/(esti_BS$alphabsEstimate^2);chuteDelta
+chutealpha  <- 8.0
+chuteeta    <- 2.0
+
+# Obtaining the results
+est_BS_Weibull <- optim(c(chutealpha,chuteeta,chuteDelta),log.lik_BS_weibull,x=times,method="BFGS",cens=status)
+hatalpha_BS_wei       <- est_BS_Weibull$par[1];hatalpha_BS_wei
+hateta_BS_wei         <- est_BS_Weibull$par[2];hateta_BS_wei
+hatdelta_BS_wei       <- est_BS_Weibull$par[3];hatdelta_BS_wei
+
+# Estimated frailty variance
+vnu2 <-(2*hatdelta_BS_wei+5)/(hatdelta_BS_wei+1)^2;vnu2
+
+# AIC and BIC
+aic1_BS_wei <-    -2*(-log.lik_BS_weibull(c(hatalpha_BS_wei,hateta_BS_wei,hatdelta_BS_wei),times,status)) + 2*3;aic1_BS_wei
+bic1_BS_wei <-    -2*(-log.lik_BS_weibull(c(hatalpha_BS_wei,hateta_BS_wei,hatdelta_BS_wei),times,status)) + 3*log(length(times));bic1_BS_wei
+
+-log.lik_BS_weibull(c(hatalpha_BS_wei,hateta_BS_wei,hatdelta_BS_wei),times,status)
+
+## SEs  
+valueH    <- -hessian(func=log.lik_BS_weibullHE,x=c(hatalpha_BS_wei,hateta_BS_wei,hatdelta_BS_wei),y=times,cens=status)
+Hess      <- solve(valueH)
+SE        <- sqrt(diag(Hess))
+
+se.coef = SE
+tval = est_BS_Weibull$par/se.coef
+matcoef = cbind(c(est_BS_Weibull$par), se.coef, tval, 2*(1-pnorm(abs(tval))))
+dimnames(matcoef) = list(names(tval), c(" Estimate",
+                                        " Std. Error", " t value", "Pr(>|t|)"))
+cat("\nCoefficient(s):\n")
+printCoefmat(matcoef, digits = 6, signif.stars = TRUE)  
+```
+
+```{r}
+
+# exponencial
+SFhat1 <- uncsurv_BS(t=times,delta=hatdelta,lambda=hatlambda)
+DSresidualModel1 <- qnorm(SFhat1) 
+
+# weibull
+SFhat2 <- unc_sf(t=times,alpha=hatalpha_BS_wei,eta=hateta_BS_wei,delta=hatdelta_BS_wei)
+DSresidualModel2 <- qnorm(SFhat2)
+```
+
+```{r}
+
+# exponencial
+SFhat1 <- uncsurv_BS(t=times,delta=hatdelta,lambda=hatlambda)
+CSresidualModel1 <- -log(SFhat1)
+
+# weibull
+SFhat2 <- unc_sf(t=times,alpha=hatalpha_BS_wei,eta=hateta_BS_wei,delta=hatdelta_BS_wei)
+CSresidualModel2 <- -log(SFhat2)
+```
+
+```{r}
+
+envelopeDS <- function(x){
+  U	         <- x
+  n	         <- length(x)
+  d2s 	     <- sort(U)
+  xq2 	     <- qnorm(ppoints(n))
+  Xsim 	     <- matrix(0, 100, n)
+  for(i in 1:100){
+    u2       <- rnorm(n)
+    Xsim[i,] <- u2
+  }
+  Xsim2      <- apply(Xsim, 1, sort)
+  d21        <- matrix(0, n, 1)
+  d22        <- matrix(0, n, 1)
+  for(i in 1:n){
+    d21[i]  <- quantile(Xsim2[i,], 0.025)
+    d22[i]  <- quantile(Xsim2[i,], 0.975)
+  }
+  d2med      <- apply(Xsim2, 1, mean)
+  fy         <- range(d2s, d21, d22)
+  plot(xq2, d2s, xlab = quote("qe"),
+       ylab = quote("qr"), 
+       pch = 20, ylim = fy)
+  par(new = T)
+  plot(xq2, d21, type = "l", ylim = fy, xlab = "", ylab = "")
+  par(new = T)
+  plot(xq2, d2med, type = "l", ylim = fy, xlab = "", ylab = "")
+  par(new = T)
+  plot(xq2, d22, type = "l", ylim = fy, xlab = "", ylab = "")
+}
+
+envelopeCS <- function(x){
+  U	         <- x
+  n	         <- length(x)
+  d2s 	     <- sort(U)
+  xq2 	     <- qexp(ppoints(n))
+  Xsim 	     <- matrix(0, 100, n)
+  for(i in 1:100){
+    u2       <- rexp(n)
+    Xsim[i,] <- u2
+  }
+  Xsim2      <- apply(Xsim, 1, sort)
+  d21        <- matrix(0, n, 1)
+  d22        <- matrix(0, n, 1)
+  for(i in 1:n){
+    d21[i]  <- quantile(Xsim2[i,], 0.025)
+    d22[i]  <- quantile(Xsim2[i,], 0.975)
+  }
+  d2med      <- apply(Xsim2, 1, mean)
+  fy         <- range(d2s, d21, d22)
+  plot(xq2, d2s, xlab = quote("qe"),
+       ylab = quote("qr"), 
+       pch = 20, ylim = fy)
+  par(new = T)
+  plot(xq2, d21, type = "l", ylim = fy, xlab = "", ylab = "")
+  par(new = T)
+  plot(xq2, d2med, type = "l", ylim = fy, xlab = "", ylab = "")
+  par(new = T)
+  plot(xq2, d22, type = "l", ylim = fy, xlab = "", ylab = "")
+}
+
+```
+
+```{r}
+
+# cs residual - exponencial
+envelopeCS(CSresidualModel1)
+```
+
+```{r}
+
+# cs residual - weibull
+envelopeCS(CSresidualModel2)
+```
+
+```{r}
+
+# ds residual - weibull
+envelopeDS(DSresidualModel2)
+```
+
+```{r}
+
+# ds residual - exponencial
+envelopeDS(DSresidualModel1)
 ```

@@ -1,0 +1,471 @@
+---
+title: "gama"
+output: html_document
+---
+
+Código reproduzido dos autores:
+
+LEÃO, Jeremias; LEIVA, Víctor; SAULO, Helton; TOMAZELLA, Vera. A survival model with Birnbaum–Saunders frailty for uncensored and censored cancer data. Brazilian Journal of Probability and Statistics, v. 32, n. 4, p. 707–729, 2018. DOI: 10.1214/17-BJPS360.
+
+```{r}
+
+options(warn = -1)
+```
+
+```{r}
+
+install.packages("frailtypack")
+install.packages("eha")
+```
+
+```{r}
+
+## Libraries
+
+library(MASS)
+library(survival)
+library(gbs)
+library(stats)
+library(stats4)
+library(boot)
+library(locfit)
+library(flexsurv)
+library(eha)
+library(numDeriv)
+
+```
+
+# Funções da Gama
+
+```{r}
+
+##################################################################
+##################################################################
+# Estimation of parameters in Gamma Frailty model
+# with Exponential baseline distribution
+##################################################################
+##################################################################
+
+##################################################################
+## Unconditional Survival Function of the 
+## Gamma frailty model with exponential baseline
+##################################################################
+
+uncsurv_gamma <- function(t,s2,lambda){
+  
+  st <- (1+s2*lambda*t)^(-1/s2)
+  
+  return(st)
+}
+
+```
+
+```{r}
+
+##################################################################
+## Unconditional Hazard Function of the 
+## Gamma frailty model with exponential baseline
+##################################################################
+
+unchazd_gamma <- function(t,s2,lambda){
+  
+  ht <- lambda*((1+s2*lambda*t)^(-1))
+  
+  return(ht)
+  
+}
+```
+
+```{r}
+
+##################################################################
+## Log Likelihood Function of Gamma Frailty Model (Exp - baseline)
+##################################################################
+
+log.lik_gamma <- function(par,x,cens){
+  
+  s2      <- par[1]
+  lambda  <- par[2]
+  
+  loglik <- sum( cens*log( unchazd_gamma(t=x,s2=s2,lambda=lambda) ) ) + sum( log( uncsurv_gamma(t=x,s2=s2,lambda=lambda) ) )
+  
+  return (-loglik)
+}
+
+log.lik_gammaHE <- function(par,y,cens){
+  
+  s2      <- par[1]
+  lambda  <- par[2]
+  
+  loglik <- sum( cens*log( unchazd_gamma(t=y,s2=s2,lambda=lambda) ) ) + sum( log( uncsurv_gamma(t=y,s2=s2,lambda=lambda) ) )
+  
+  return (loglik)
+}
+
+```
+
+```{r}
+
+##################################################################
+##################################################################
+# Estimation of parameters in Gamma Frailty model
+# with Weibull baseline distribution
+##################################################################
+##################################################################
+
+
+
+##################################################################
+## Unconditional Survival Function of the 
+## Gamma frailty model with Weibull baseline
+##################################################################
+
+uncsurv_gamma_weib <- function(t,s2,alpha,eta){
+  
+  st <- (1 + s2*((t/alpha)^(eta)) )^(-1/s2)
+  
+  return(st)
+}
+
+```
+
+```{r}
+
+##################################################################
+## Unconditional Hazard Function of the 
+## Gamma frailty model with Weibul baseline
+##################################################################
+
+unchazd_gamma_weib <- function(t,s2,alpha,eta){
+  
+  ht <- (eta*(t^(eta-1)))/( (alpha^eta) * (1 + s2*((t/alpha)^(eta)) ) )
+  
+  return(ht)
+  
+}
+```
+
+```{r}
+
+##################################################################
+## Log Likelihood Function of Gamma Frailty Model (Wei - baseline)
+##################################################################
+
+log.lik_gamma_weib <- function(par,x,cens){
+  
+  s2     <- par[1]
+  alpha  <- par[2]
+  eta    <- par[3]
+  
+  loglik <- sum( cens*log( unchazd_gamma_weib(t=x,s2=s2,alpha=alpha,eta=eta) ) ) + sum( log( uncsurv_gamma_weib(t=x,s2=s2,alpha=alpha,eta=eta) ) )
+  
+  return (-loglik)
+}
+
+log.lik_gamma_weibHE <- function(par,y,cens){
+  
+  s2     <- par[1]
+  alpha  <- par[2]
+  eta    <- par[3]
+  
+  loglik <- sum( cens*log( unchazd_gamma_weib(t=y,s2=s2,alpha=alpha,eta=eta) ) ) + sum( log( uncsurv_gamma_weib(t=y,s2=s2,alpha=alpha,eta=eta) ) )
+  
+  return (loglik)
+}
+
+```
+
+```{r}
+
+##################################################################
+##################################################################
+# Estimation of parameters in Gamma Frailty model
+# with lognormal baseline distribution
+##################################################################
+##################################################################
+
+##################################################################
+## Unconditional Survival Function of the 
+## Gamma frailty model with log-normal baseline
+##################################################################
+
+uncsurv_gamma_logn <- function(t,s2,pmu,psig){
+  
+  Ht  <- -log( psig*t*(1 - pnorm( (log(t) - pmu)/psig ) ) )
+  
+  st <- (1 + s2*Ht )^(-1/s2)
+  
+  return(st)
+  
+}
+
+```
+
+```{r}
+
+##################################################################
+## Unconditional Hazard Function of the 
+## Gamma frailty model with log-normal baseline
+##################################################################
+
+unchazd_gamma_logn <- function(t,s2,pmu,psig){
+  
+  Ht  <- -log( psig*t*(1 - pnorm( (log(t) - pmu)/psig ) ) )
+  
+  ht   <- dnorm( (log(t) - pmu)/psig )/( psig*t*(1 - pnorm( (log(t) - pmu)/psig ) ) )
+  
+  htt <- ht/( 1 + s2*Ht )
+  
+  return(htt)
+  
+}
+```
+
+```{r}
+
+
+##################################################################
+## Log Likelihood Function of Gamma Frailty Model (LN - baseline)
+##################################################################
+
+log.lik_gamma_logn <- function(par,x,cens){
+  
+  s2    <- par[1]
+  pmu   <- par[2]
+  psig  <- par[3]
+  
+  loglik <- sum( cens*log( unchazd_gamma_logn(t=x,s2=s2,pmu=pmu,psig=psig) ) ) + sum( log( uncsurv_gamma_logn(t=x,s2=s2,pmu=pmu,psig=psig) ) )
+  
+  return (-loglik)
+}
+
+log.lik_gamma_lognHLN <- function(par,y,cens){
+  
+  s2    <- par[1]
+  pmu   <- par[2]
+  psig  <- par[3]
+  
+  loglik <- sum( cens*log( unchazd_gamma_logn(t=y,s2=s2,pmu=pmu,psig=psig) ) ) + sum( log( uncsurv_gamma_logn(t=y,s2=s2,pmu=pmu,psig=psig) ) )
+  
+  return (loglik)
+}
+
+```
+
+# Dados
+
+```{r}
+
+
+data(veteran,package="survival")
+
+times = veteran$time
+status = veteran$status
+```
+
+```{r}
+
+# Estimation parameter values of Gamma frailty
+esti_gamma  <- fitdistr(times,"gamma");esti_gamma
+chute_s2    <- as.numeric(esti_gamma[["estimate"]][1]);chute_s2
+chuteLambda <- 1.0
+
+# Obtaining the results
+est_gamma       <- optim(c(chute_s2,chuteLambda),log.lik_gamma,x=times,method="CG",cens=status)
+hats2           <- est_gamma$par[1];hats2
+hatlambda_gamma <- est_gamma$par[2];hatlambda_gamma
+
+# AIC and BIC
+aic1_gamma <-   -2*(-log.lik_gamma(c(hats2,hatlambda_gamma),times,status)) + 2*2 ;aic1_gamma
+bic1_gamma <-   -2*(-log.lik_gamma(c(hats2,hatlambda_gamma),times,status)) + 2*log(length(times));bic1_gamma
+
+-log.lik_gamma(c(hats2,hatlambda_gamma),times,status)
+```
+
+```{r}
+
+## SEs  
+valueH    <- -hessian(func=log.lik_gammaHE,x=c(hats2,hatlambda_gamma),y=times,cens=status)
+Hess      <- solve(valueH)
+SE        <- sqrt(diag(Hess))
+
+se.coef = SE
+tval = est_gamma$par/se.coef
+matcoef = cbind(c(est_gamma$par), se.coef, tval, 2*(1-pnorm(abs(tval))))
+dimnames(matcoef) = list(names(tval), c(" Estimate",
+                                        " Std. Error", " t value", "Pr(>|t|)"))
+cat("\nCoefficient(s):\n")
+printCoefmat(matcoef, digits = 6, signif.stars = TRUE) 
+```
+
+```{r}
+
+# Estimation parameter values of Gamma frailty weibul baseline
+esti_gamma_weib  <- fitdistr(times,"gamma");esti_gamma_weib
+chute_s2         <- as.numeric(esti_gamma_weib[["estimate"]][1]);chute_s2
+#chute_s2         <- 0.3
+#esti_weib        <- fitdistr(dat,"weibull");esti_weib
+#chutealpha       <- esti_weib[["estimate"]][1];chutealpha
+#chuteeta         <- esti_weib[["estimate"]][2];chuteeta
+chutealpha       <- 1.0
+chuteeta         <- 0.5
+
+# Obtaining the results
+est_gamma_weibull      <- optim(c(chute_s2,chutealpha,chuteeta),log.lik_gamma_weib,x=times,method="SANN",cens=status)
+hats2_weib             <- est_gamma_weibull$par[1];hats2_weib
+hatalpha_gamma_weibull <- est_gamma_weibull$par[2];hatalpha_gamma_weibull
+hateta_gamma_weibull   <- est_gamma_weibull$par[3];hateta_gamma_weibull
+
+# Estimating the variances of parameter estimates
+res_gamma_weibull <- optimHess(c(hats2_weib,hatalpha_gamma_weibull,hateta_gamma_weibull),log.lik_gamma_weib,x=times,cens=status)
+invRes_gamma_weib <- solve(res_gamma_weibull)
+sqrt(invRes_gamma_weib[1,1])
+sqrt(invRes_gamma_weib[2,2])
+sqrt(invRes_gamma_weib[3,3])
+
+# AIC and BIC
+aic1_gamma_weibull <-   -2*(-log.lik_gamma_weib(c(hats2_weib,hatalpha_gamma_weibull,hateta_gamma_weibull),times,status)) + 2*3 ;aic1_gamma_weibull
+bic1_gamma_weibull <-   -2*(-log.lik_gamma_weib(c(hats2_weib,hatalpha_gamma_weibull,hateta_gamma_weibull),times,status)) + 3*log(length(times));bic1_gamma_weibull
+
+-log.lik_gamma_weib(c(hats2_weib,hatalpha_gamma_weibull,hateta_gamma_weibull),times,status)
+
+```
+
+```{r}
+
+## SEs  
+valueH    <- -hessian(func=log.lik_gamma_weibHE,x=c(as.vector(hats2_weib),hatalpha_gamma_weibull,hateta_gamma_weibull),y=times,cens=status)
+Hess      <- solve(valueH)
+SE        <- sqrt(diag(Hess))
+
+se.coef = SE
+tval = est_gamma_weibull$par/se.coef
+matcoef = cbind(c(est_gamma_weibull$par), se.coef, tval, 2*(1-pnorm(abs(tval))))
+dimnames(matcoef) = list(names(tval), c(" Estimate",
+                                        " Std. Error", " t value", "Pr(>|t|)"))
+cat("\nCoefficient(s):\n")
+printCoefmat(matcoef, digits = 6, signif.stars = TRUE) 
+```
+
+# QQ Plot
+
+## Residuo Quantilico
+
+```{r}
+
+SFhat1 <- uncsurv_gamma(t=times,s2=hats2,lambda=hatlambda_gamma)
+DSresidualModel1 <- qnorm(SFhat1)
+
+SFhat2 <- uncsurv_gamma_weib(t=times,s2=hats2_weib,alpha=hatalpha_gamma_weibull,eta=hateta_gamma_weibull)
+DSresidualModel2 <- qnorm(SFhat2)
+
+```
+
+```{r}
+
+envelopeDS <- function(x){
+  U	         <- x
+  n	         <- length(x)
+  d2s 	     <- sort(U)
+  xq2 	     <- qnorm(ppoints(n))
+  Xsim 	     <- matrix(0, 100, n)
+  for(i in 1:100){
+    u2       <- rnorm(n)
+    Xsim[i,] <- u2
+  }
+  Xsim2      <- apply(Xsim, 1, sort)
+  d21        <- matrix(0, n, 1)
+  d22        <- matrix(0, n, 1)
+  for(i in 1:n){
+    d21[i]  <- quantile(Xsim2[i,], 0.025)
+    d22[i]  <- quantile(Xsim2[i,], 0.975)
+  }
+  d2med      <- apply(Xsim2, 1, mean)
+  fy         <- range(d2s, d21, d22)
+  plot(xq2, d2s, xlab = quote("qe"),
+       ylab = quote("qr"), 
+       pch = 20, ylim = fy)
+  par(new = T)
+  plot(xq2, d21, type = "l", ylim = fy, xlab = "", ylab = "")
+  par(new = T)
+  plot(xq2, d2med, type = "l", ylim = fy, xlab = "", ylab = "")
+  par(new = T)
+  plot(xq2, d22, type = "l", ylim = fy, xlab = "", ylab = "")
+}
+
+
+```
+
+```{r}
+
+# exponencial
+envelopeDS(DSresidualModel1)
+```
+
+```{r}
+
+# weibull
+envelopeDS(DSresidualModel2)
+```
+
+## Resiuduo Cox Snell
+
+```{r}
+
+#########################################################
+## QQ plot - Cox-Snell - Residuals
+######################################################### 
+
+SFhat1 <- uncsurv_gamma(t=times,s2=hats2,lambda=hatlambda_gamma)
+CSresidualModel1 <- -log(SFhat1)
+
+SFhat2 <- uncsurv_gamma_weib(t=times,s2=hats2_weib,alpha=hatalpha_gamma_weibull,eta=hateta_gamma_weibull)
+CSresidualModel2 <- -log(SFhat2)
+
+```
+
+```{r}
+
+envelopeCS <- function(x){
+  U	         <- x
+  n	         <- length(x)
+  d2s 	     <- sort(U)
+  xq2 	     <- qexp(ppoints(n))
+  Xsim 	     <- matrix(0, 100, n)
+  for(i in 1:100){
+    u2       <- rexp(n)
+    Xsim[i,] <- u2
+  }
+  Xsim2      <- apply(Xsim, 1, sort)
+  d21        <- matrix(0, n, 1)
+  d22        <- matrix(0, n, 1)
+  for(i in 1:n){
+    d21[i]  <- quantile(Xsim2[i,], 0.025)
+    d22[i]  <- quantile(Xsim2[i,], 0.975)
+  }
+  d2med      <- apply(Xsim2, 1, mean)
+  fy         <- range(d2s, d21, d22)
+  plot(xq2, d2s, xlab = quote("qe"),
+       ylab = quote("qr"), 
+       pch = 20, ylim = fy)
+  par(new = T)
+  plot(xq2, d21, type = "l", ylim = fy, xlab = "", ylab = "")
+  par(new = T)
+  plot(xq2, d2med, type = "l", ylim = fy, xlab = "", ylab = "")
+  par(new = T)
+  plot(xq2, d22, type = "l", ylim = fy, xlab = "", ylab = "")
+}
+
+```
+
+```{r}
+
+# exponencial
+envelopeCS(CSresidualModel1)
+```
+
+```{r}
+
+# weibull
+envelopeCS(CSresidualModel2)
+```

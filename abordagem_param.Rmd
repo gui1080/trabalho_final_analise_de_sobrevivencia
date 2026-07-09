@@ -1,0 +1,1061 @@
+---
+title: "abordagem_parametrica"
+output: html_document
+---
+
+Conforme lista 3, exercício 3 da lista de exercícios.
+
+```{r}
+
+install.packages("MASS")
+```
+
+```{r setup, message=FALSE, warning=FALSE}
+
+library(survival)
+library(flexsurv)
+library(MASS)
+
+```
+
+# Câncer de Pulmão
+
+136 pacientes
+
+Nível de referência -\> *1- células escamosas para covariável cells*
+
+```{r}
+
+veteranos <- read.table("veteranos.txt", header = TRUE)
+
+head(veteranos)
+```
+
+# Letra A Parte 1 - Escolher variáveis
+
+```{r}
+
+# MODELO COMPLETO 
+
+mod_full <- coxph(
+  Surv(tempo, evento) ~ factor(tto) + factor(cells) + kpontuac + idade + factor(terapAnt),
+  data = veteranos
+)
+```
+
+```{r}
+
+mod_step <- stepAIC(
+  mod_full,
+  direction = "both",
+  trace = TRUE
+)
+
+summary(mod_step)
+```
+
+No final step wise AIC para modelo de Cox deixa só **factor(cells) + kpontuac** como covariável que importa.
+
+```{r}
+
+n <- nrow(veteranos)
+
+mod_step_bic <- stepAIC(
+  mod_full,
+  direction = "both",
+  k = log(n),
+  trace = TRUE
+)
+
+summary(mod_step_bic)
+```
+
+Mesma coisa aqui: **factor(cells) + kpontuac.**
+
+Eu vou manter a idade pq em teoria faz sentido apesar de não ter significância. Tipo de tratamento também (por ser o objeto do estudo), queremos comparar.
+
+Na prática sendo muito simplista vou tirar *terapAnt e deixar o resto*.
+
+# Letra A Parte 2 - Ajustar um Modelo Paramétrico
+
+```{r}
+
+reg.exp <- survreg(
+  Surv(tempo, evento) ~ factor(tto),
+  data = veteranos,
+  dist = "exponential"
+)
+
+summary(reg.exp)
+```
+
+```{r}
+
+RegExpComp <- survreg(
+  Surv(tempo, evento) ~ factor(tto) + factor(cells) + kpontuac + idade,
+  data = veteranos,
+  dist = "exponential"
+)
+
+summary(RegExpComp)
+```
+
+```{r}
+
+reg.weib <- survreg(
+  Surv(tempo, evento) ~ factor(tto) + factor(cells) + kpontuac + idade,
+  data = veteranos,
+  dist = "weibull"
+)
+
+summary(reg.weib)
+```
+
+```{r}
+
+reg.LogLogis <- survreg(
+  Surv(tempo, evento) ~ factor(tto) + factor(cells) + kpontuac + idade,
+  data = veteranos,
+  dist = "loglogistic"
+)
+
+summary(reg.LogLogis)
+
+eta_LogLogis <- predict(reg.LogLogis, newdata = veteranos, type = "lp")
+sigma <- reg.LogLogis$scale
+gamma <- 1 / sigma
+alpha <- exp(eta_LogLogis)
+
+t <- seq(1, max(veteranos$tempo), length.out = 450)
+
+S_loglogis <- sapply(alpha, function(a) {
+  1 / (1 + (t / a)^gamma)
+})
+```
+
+```{r}
+
+reg.LogNorm <- survreg(
+  Surv(tempo, evento) ~ factor(tto) + factor(cells) + kpontuac + idade,
+  data = veteranos,
+  dist = "lognorm"
+)
+
+summary(reg.LogNorm)
+```
+
+```{r}
+
+reg.Logis <- survreg(
+  Surv(tempo, evento) ~ factor(tto) + factor(cells) + kpontuac + idade,
+  data = veteranos,
+  dist = "logistic"
+)
+
+summary(reg.Logis)
+```
+
+```{r}
+
+reg.Gauss <- survreg(
+  Surv(tempo, evento) ~ factor(tto) + factor(cells) + kpontuac + idade,
+  data = veteranos,
+  dist = "gaussian"
+)
+
+summary(reg.Gauss)
+```
+
+```{r}
+
+form <- Surv(tempo, evento) ~ factor(tto) + factor(cells) + kpontuac + idade
+```
+
+```{r}
+
+reg.flex.gompertz <- flexsurvreg(
+  form,
+  data = veteranos,
+  dist = "gompertz"
+)
+
+reg.flex.genf <- flexsurvreg(
+  form,
+  data = veteranos,
+  dist = "genf"
+)
+
+reg.flex.gamma <- flexsurvreg(
+  form,
+  data = veteranos,
+  dist = "gamma"
+)
+```
+
+## Critérios da Informação
+
+```{r}
+
+AIC(reg.exp, reg.weib, reg.LogNorm, reg.LogLogis, reg.Logis, reg.Gauss, reg.flex.gompertz, reg.flex.genf, reg.flex.gamma)
+```
+
+```{r}
+
+BIC(reg.exp, reg.weib, reg.LogNorm, reg.LogLogis, reg.Logis, reg.Gauss, reg.flex.gompertz, reg.flex.genf, reg.flex.gamma)
+```
+
+**Escolhida vai ser a LogLogis!**
+
+### Visualização: Todas as Curvas de Sobrevivência contra Kaplan-Meier
+
+```{r}
+
+km <- survfit(Surv(tempo, evento) ~ 1, data = veteranos)
+
+t <- seq(0.001, max(veteranos$tempo), length.out = 300)
+
+curva_media_survreg <- function(modelo, dados, tempos) {
+  eta <- predict(modelo, newdata = dados, type = "lp")
+  sigma <- modelo$scale
+  dist <- modelo$dist
+
+  surv <- sapply(eta, function(mu) {
+    if (dist == "exponential") {
+      exp(-tempos / exp(mu))
+    } else if (dist == "weibull") {
+      exp(-(tempos / exp(mu))^(1 / sigma))
+    } else if (dist == "loglogistic") {
+      1 / (1 + (tempos / exp(mu))^(1 / sigma))
+    } else if (dist == "lognormal") {
+      1 - pnorm((log(tempos) - mu) / sigma)
+    } else if (dist == "logistic") {
+      1 - plogis((tempos - mu) / sigma)
+    } else if (dist == "gaussian") {
+      1 - pnorm((tempos - mu) / sigma)
+    }
+  })
+
+  rowMeans(surv, na.rm = TRUE)
+}
+
+curva_media_flexsurv <- function(modelo, dados, tempos) {
+  pred <- summary(
+    modelo,
+    newdata = dados,
+    type = "survival",
+    t = tempos,
+    ci = FALSE
+  )
+
+  if (is.data.frame(pred)) {
+    return(pred$est)
+  }
+
+  rowMeans(do.call(cbind, lapply(pred, function(x) x$est)), na.rm = TRUE)
+}
+
+modelos_survreg <- list(
+  "Exponencial (tto)" = reg.exp,
+  "Exponencial completa" = RegExpComp,
+  "Weibull" = reg.weib,
+  "Log-logistico" = reg.LogLogis,
+  "Log-normal" = reg.LogNorm,
+  "Logistico" = reg.Logis,
+  "Gaussiano" = reg.Gauss
+)
+
+curvas_modelos <- lapply(
+  modelos_survreg,
+  curva_media_survreg,
+  dados = veteranos,
+  tempos = t
+)
+
+curvas_modelos[["Gamma"]] <- curva_media_flexsurv(
+  reg.flex.gamma,
+  dados = veteranos,
+  tempos = t
+)
+
+cores <- c(
+  "black",
+  "#D55E00",
+  "#0072B2",
+  "#009E73",
+  "#CC79A7",
+  "#E69F00",
+  "#56B4E9",
+  "#999999",
+  "#882255"
+)
+
+ltys <- c(1, 2, 3, 4, 5, 6, 2, 3, 4)
+
+plot(
+  km,
+  conf.int = FALSE,
+  xlab = "Tempo",
+  ylab = "S(t)",
+  main = "Kaplan-Meier vs modelos parametricos",
+  lwd = 2,
+  col = cores[1]
+)
+
+for (i in seq_along(curvas_modelos)) {
+  lines(
+    t,
+    curvas_modelos[[i]],
+    col = cores[i + 1],
+    lwd = 2,
+    lty = ltys[i + 1]
+  )
+}
+
+legend(
+  "topright",
+  legend = c("Kaplan-Meier", names(curvas_modelos)),
+  col = cores,
+  lty = ltys,
+  lwd = 2,
+  cex = 0.7,
+  bty = "n"
+)
+
+```
+
+### Estimativas principais
+
+```{r}
+
+reg.LogLogis$coefficients
+```
+
+O parâmetro de forma é 1/escala.
+
+```{r}
+
+sigma_logis <- reg.LogLogis$scale
+sigma_logis
+```
+
+```{r}
+
+library(AdequacyModel)
+
+TTT(veteranos$tempo[veteranos$evento == 1])
+```
+
+Isso indica taxa de falha crescente. Será que a taxa de falha do nosso modelo paramétrico coincide com isso?
+
+```{r}
+
+# os momentos T que eu vou calcular
+t <- seq(1, max(veteranos$tempo), length.out = 450)
+
+# esse aqui é o preditor da regressão que eu fiz!
+# são os valores previstos!
+eta <- predict(reg.Logis, newdata = veteranos, type = "lp")
+
+# parametro de escala da distribuicao
+sigma <- reg.Logis$scale
+
+# h = f/S
+h_logis <- sapply(eta, function(mu) {
+  f <- dlogis(t, location = mu, scale = sigma)
+  S <- 1 - plogis(t, location = mu, scale = sigma)
+  f / S
+})
+
+h_media <- rowMeans(h_logis)
+
+plot(
+  t, h_media,
+  type = "l",
+  lwd = 2,
+  col = "#0072B2",
+  xlab = "Tempo",
+  ylab = "h(t)",
+  main = "Taxa de falha - modelo logístico"
+)
+```
+
+# Letra B - Interprete
+
+Interpretando:
+
+O modelo é log(Ti) = Beta0 + Beta1 x1 + ... + escala \* erro
+
+0.577 é a escala multiplicando o erro
+
+Os valores em "Values" são os betas do modelo.
+
+Nesse caso os valores, por ser uma distribuição loglogística, não estão na unidade original de tempo (em dias).
+
+Então por exemplo, exp(0.3539) = 1.036 para covariável kpontuac indica para cada aumento dela o tempo de sobrevivência aumenta em 3,6%. E como o pvalor é baixo, essa convariável é bem significativa.
+
+Para cells = 2 o beta é -0.65782 e exp(-0.65782) = 0.52 logo esses pacientes tem 1 - 0.52 tempo de sobrevivência quando comparado com cells = 1 (basal). Cells 2 e 3 tem um comportamento parecido, só cells=4 parece aumentar a sobrevida do paciente com esse tratamento, porém o pvalue sendo alto não tem significância estatística.
+
+Ocorre parecido com o tratamento = 2, sendo tratamento = 1 o tratamento basal. Analisando temos exp(−0.10577) = 0,9 e 1 - 0.9 = 0.1 ou seja 10% de redução na sobrevivência ao comparar com o tratamento basal (tem 90% da sobrevivência basal). Mas o pvalor é alto então o teste não tem significância.
+
+O teste global indica que o modelo ajustado com covariável é melhor que o basal, pvalue baixo nos indica que não dá para descartar que as covariáveis no geral não são importantes.
+
+```{r}
+
+# vendo direito os coeficientes
+
+exp(coef(reg.LogLogis))
+```
+
+# Mas e sem covariáveis?
+
+```{r}
+
+reg.exp2 <- survreg(
+  Surv(tempo, evento) ~ 1,
+  data = veteranos,
+  dist = "exponential"
+)
+
+summary(reg.exp2)
+```
+
+```{r}
+
+reg.weib2 <- survreg(
+  
+  Surv(tempo, evento) ~ 1,
+  
+  data = veteranos,
+  
+  dist = "weibull"
+  
+)
+
+summary(reg.weib2)
+```
+
+```{r}
+
+reg.LogLogis2 <- survreg(
+  
+  Surv(tempo, evento) ~ 1,
+  
+  data = veteranos,
+  
+  dist = "loglogistic"
+  
+)
+
+
+
+summary(reg.LogLogis2)
+
+
+
+eta_LogLogis <- predict(reg.LogLogis, newdata = veteranos, type = "lp")
+
+sigma <- reg.LogLogis$scale
+
+gamma <- 1 / sigma
+
+alpha <- exp(eta_LogLogis)
+
+
+
+t <- seq(1, max(veteranos$tempo), length.out = 450)
+
+
+
+S_loglogis <- sapply(alpha, function(a) {
+  
+  1 / (1 + (t / a)^gamma)
+  
+})
+
+```
+
+```{r}
+
+reg.LogNorm2 <- survreg(
+  
+  Surv(tempo, evento) ~ 1,
+  
+  data = veteranos,
+  
+  dist = "lognorm"
+  
+)
+
+
+summary(reg.LogNorm2)
+```
+
+```{r}
+
+reg.Logis2 <- survreg(
+  
+  Surv(tempo, evento) ~ 1,
+  
+  data = veteranos,
+  
+  dist = "logistic"
+  
+)
+
+
+
+summary(reg.Logis2)
+```
+
+```{r}
+
+reg.Gauss2 <- survreg(
+  
+  Surv(tempo, evento) ~ 1,
+  
+  data = veteranos,
+  
+  dist = "gaussian"
+  
+)
+
+
+summary(reg.Gauss2)
+```
+
+```{r}
+
+
+AIC(reg.exp2, reg.weib2, reg.LogNorm2, reg.LogLogis2, reg.Logis2, reg.Gauss2)
+```
+
+```{r}
+
+
+BIC(reg.exp2, reg.weib2, reg.LogNorm2, reg.LogLogis2, reg.Logis2, reg.Gauss2)
+```
+
+```{r}
+
+
+km <- survfit(Surv(tempo, evento) ~ 1, data = veteranos)
+
+t <- seq(0.001, max(veteranos$tempo), length.out = 300)
+
+curva_media_survreg <- function(modelo, dados, tempos) {
+  eta <- predict(modelo, newdata = dados, type = "lp")
+  sigma <- modelo$scale
+  dist <- modelo$dist
+  
+  surv <- sapply(eta, function(mu) {
+    if (dist == "exponential") {
+      exp(-tempos / exp(mu))
+    } else if (dist == "weibull") {
+      exp(-(tempos / exp(mu))^(1 / sigma))
+    } else if (dist == "loglogistic") {
+      1 / (1 + (tempos / exp(mu))^(1 / sigma))
+    } else if (dist == "lognormal") {
+      1 - pnorm((log(tempos) - mu) / sigma)
+    } else if (dist == "logistic") {
+      1 - plogis((tempos - mu) / sigma)
+    } else if (dist == "gaussian") {
+      1 - pnorm((tempos - mu) / sigma)
+    }
+  })
+  
+  rowMeans(surv, na.rm = TRUE)
+}
+
+curva_media_flexsurv <- function(modelo, dados, tempos) {
+  pred <- summary(
+    modelo,
+    newdata = dados,
+    type = "survival",
+    t = tempos,
+    ci = FALSE
+  )
+  
+  if (is.data.frame(pred)) {
+    return(pred$est)
+  }
+  
+  rowMeans(do.call(cbind, lapply(pred, function(x) x$est)), na.rm = TRUE)
+}
+
+modelos_survreg <- list(
+  "Exponencial" = reg.exp2,
+  "Weibull" = reg.weib2
+  #"Log-logistico" = reg.LogLogis2,
+  #"Log-normal" = reg.LogNorm2,
+  #"Logistico" = reg.Logis2,
+  #"Gaussiano" = reg.Gauss2
+)
+
+curvas_modelos <- lapply(
+  modelos_survreg,
+  curva_media_survreg,
+  dados = veteranos,
+  tempos = t
+)
+
+cores <- c(
+  "black",
+  "#D55E00",
+  "#0072B2",
+  "#009E73",
+  "#CC79A7",
+  "#E69F00",
+  "#56B4E9",
+  "#999999",
+  "#882255"
+)
+
+ltys <- c(1, 2, 3, 4, 5, 6, 2, 3, 4)
+
+plot(
+  km,
+  conf.int = FALSE,
+  xlab = "Tempo",
+  ylab = "S(t)",
+  #main = "Kaplan-Meier vs modelos parametricos",
+  lwd = 2,
+  col = cores[1]
+  
+)
+
+for (i in seq_along(curvas_modelos)) {
+  lines(
+    t,
+    curvas_modelos[[i]],
+    col = cores[i + 1],
+    lwd = 2,
+    lty = ltys[i + 1]
+  )
+}
+
+legend(
+  "topright",
+  legend = c("Kaplan-Meier", names(curvas_modelos)),
+  col = cores,
+  lty = ltys,
+  lwd = 2,
+  cex = 1,
+  bty = "n"
+)
+
+```
+
+```{r}
+
+plot_coxsnell <- function(res_cs, evento, titulo = "Resíduos de Cox-Snell",
+                          limite = 3) {
+  
+  ajuste <- survfit(Surv(res_cs, evento) ~ 1)
+  
+  x <- ajuste$time
+  y <- -log(ajuste$surv)
+  
+  ok <- is.finite(x) & is.finite(y)
+  x <- x[ok]
+  y <- y[ok]
+  
+  plot(
+    x, y,
+    type = "s",
+    lwd = 2,
+    xlab = "Resíduo de Cox-Snell",
+    ylab = "Risco acumulado estimado",
+    main = titulo,
+    xlim = c(0, limite),
+    ylim = c(0, limite),
+    xaxs = "i",
+    yaxs = "i"
+  )
+  
+  abline(0, 1, lty = 2, col = "red", lwd = 2)
+}
+```
+
+```{r}
+
+# resultado dos resíduos
+
+res_cs_exp <- coxsnell_survreg(reg.exp2, veteranos)
+res_cs_weib <- coxsnell_survreg(reg.weib2, veteranos)
+
+res_cs_lognorm <- coxsnell_survreg(reg.LogNorm2, veteranos)
+res_cs_loglogis <- coxsnell_survreg(reg.LogLogis2, veteranos)
+
+# plotando
+
+plot_coxsnell(res_cs_loglogis, veteranos$evento, "Log-logístico", limite = 3)
+plot_coxsnell(res_cs_lognorm,  veteranos$evento, "Log-normal",    limite = 3)
+plot_coxsnell(res_cs_exp,      veteranos$evento, "Exponencial",   limite = 3)
+plot_coxsnell(res_cs_weib,     veteranos$evento, "Weibull",       limite = 3)
+```
+
+```{r}
+
+quantilico_survreg <- function(modelo, dados, tempo = "tempo", evento = "evento", seed = 123) {
+  
+  set.seed(seed)
+  
+  t <- dados[[tempo]]
+  d <- dados[[evento]]
+  
+  eta <- predict(modelo, newdata = dados, type = "lp")
+  sigma <- modelo$scale
+  dist <- modelo$dist
+  
+  S <- if (dist == "exponential") {
+    exp(-t / exp(eta))
+    
+  } else if (dist == "weibull") {
+    exp(-(t / exp(eta))^(1 / sigma))
+    
+  } else if (dist == "loglogistic") {
+    1 / (1 + (t / exp(eta))^(1 / sigma))
+    
+  } else if (dist == "lognormal") {
+    1 - pnorm((log(t) - eta) / sigma)
+    
+  } else {
+    stop("Distribuição ainda não implementada.")
+  }
+  
+  F <- 1 - S
+  
+  u <- numeric(length(t))
+  
+  # Para eventos observados
+  u[d == 1] <- F[d == 1]
+  
+  # Para observações censuradas à direita:
+  # sorteia U entre F(c_i) e 1
+  u[d == 0] <- runif(
+    sum(d == 0),
+    min = F[d == 0],
+    max = 1
+  )
+  
+  # evita Inf em qnorm
+  u <- pmin(pmax(u, 1e-10), 1 - 1e-10)
+  
+  rq <- qnorm(u)
+  
+  return(rq)
+}
+
+
+```
+
+```{r}
+
+res_q_exp <- quantilico_survreg(reg.exp2, veteranos)
+res_q_weib <- quantilico_survreg(reg.weib2, veteranos)
+res_q_lognorm <- quantilico_survreg(reg.LogNorm2, veteranos)
+res_q_loglogis <- quantilico_survreg(reg.LogLogis2, veteranos)
+
+hist(
+  res_q_weib,
+  breaks = 20,
+  probability = TRUE,
+  main = "Resíduos quantílicos - Weibull",
+  xlab = "Resíduo quantílico"
+)
+
+curve(
+  dnorm(x),
+  add = TRUE,
+  col = "red",
+  lwd = 2
+)
+```
+
+```{r}
+
+qqnorm(
+  res_q_weib,
+  main = "QQ-plot dos resíduos quantílicos - Weibull"
+)
+
+qqline(
+  res_q_weib,
+  col = "red",
+  lwd = 2
+)
+
+qqnorm(
+  res_q_exp,
+  main = "QQ-plot dos resíduos quantílicos - Exponencial"
+)
+
+qqline(
+  res_q_exp,
+  col = "red",
+  lwd = 2
+)
+
+qqnorm(
+  res_q_lognorm,
+  main = "QQ-plot dos resíduos quantílicos - Log Normal"
+)
+
+qqline(
+  res_q_lognorm,
+  col = "red",
+  lwd = 2
+)
+
+qqnorm(
+  res_q_loglogis,
+  main = "QQ-plot dos resíduos quantílicos - Log Logística"
+)
+
+qqline(
+  res_q_loglogis,
+  col = "red",
+  lwd = 2
+)
+```
+
+# Letra C - Modelo de Regressão de Cox
+
+```{r}
+
+reg.cox <- coxph(
+  Surv(tempo, evento) ~ factor(tto) + cells + kpontuac + idade,
+  data = veteranos
+)
+
+summary(reg.cox)
+```
+
+```{r}
+
+ajuste.cox <- survfit(reg.cox)
+
+plot(
+  ajuste.cox,
+  xlab = "Tempo",
+  ylab = "S(t)",
+  main = "Curva de sobrevivência ajustada - Cox",
+  lwd = 2
+)
+```
+
+```{r}
+
+t <- seq(0.001, max(veteranos$tempo), length.out = nrow(S_loglogis))
+
+S_media_loglogis <- rowMeans(S_loglogis)
+
+length(t)
+length(S_media_loglogis)
+
+
+```
+
+```{r}
+
+plot(
+  t, S_media_loglogis,
+  type = "l",
+  lwd = 2,
+  col = "#0072B2",
+  xlab = "Tempo",
+  ylab = "S(t)",
+  main = "Sobrevivência - modelo Log-logístico"
+)
+```
+
+```{r}
+
+plot(
+  t, S_media_loglogis,
+  type = "l",
+  lwd = 2,
+  col = "#0072B2",
+  xlab = "Tempo",
+  ylab = "S(t)",
+  ylim = c(0, 1),
+  main = "Log-logístico vs Cox"
+)
+
+lines(
+  ajuste.cox,
+  col = "#D55E00",
+  lwd = 2
+)
+
+legend(
+  "topright",
+  legend = c("Log-logístico", "Cox"),
+  col = c("#0072B2", "#D55E00"),
+  lwd = 2,
+  bty = "n"
+)
+```
+
+Ficou bem parecido! Cox cai mais rápido no final. Como fica comparando com Kaplan Meier?
+
+```{r}
+
+km_tto <- survfit(
+  Surv(tempo, evento) ~ factor(tto),
+  data = veteranos
+)
+
+summary(km_tto)
+```
+
+```{r}
+
+plot(
+  km_tto,
+  xlab = "Tempo",
+  ylab = "S(t)",
+  main = "Kaplan-Meier por tratamento"
+)
+
+legend(
+  "topright",
+  legend = c("Tratamento 1", "Tratamento 2"),
+  lty = 1:2
+)
+```
+
+# Letra D - Coeficientes!
+
+```{r}
+
+coef(reg.cox)
+```
+
+```{r}
+
+reg.Logis$coefficients
+```
+
+```{r}
+
+# Coeficientes do Cox
+beta_cox <- coef(reg.cox)
+
+# Coeficientes do modelo paramétrico, sem intercepto
+beta_param <- coef(reg.LogLogis)[names(beta_cox)]
+
+# Parâmetro de escala do modelo paramétrico
+sigma_param <- reg.LogLogis$scale
+
+# Transformação pedida no enunciado
+beta_star <- -beta_param / sigma_param
+
+# Tabela comparativa
+tabela_coef <- data.frame(
+  Covariavel = names(beta_cox),
+  Cox = beta_cox,
+  Parametrico_transformado = beta_star
+)
+
+tabela_coef
+```
+
+# Letra E - Resíduos pro Modelo de Cox
+
+### Resíduos de Schoenfeld
+
+Verifica se hipótese de riscos proporcionais vale.
+
+p-valor \> 0.05 sem evidência contra riscos proporcionais
+
+p-valor \< 0.05 existe evidência contra riscos proporcionais
+
+```{r}
+
+teste.ph <- cox.zph(reg.cox)
+teste.ph
+```
+
+O *"global"* indica que o modelo como um todo viola a hipótese de riscos proporcionais.
+
+cells, kpontuac indicam violação de proporcionalidade
+
+idade, não indica violação de proporcionalidade
+
+```{r}
+plot(teste.ph)
+```
+
+### Resíduos de Martingale
+
+São úteis para ver se uma variável contínua entrou de forma adequada no modelo, por exemplo, se `idade` deveria ser linear ou transformada.
+
+```{r}
+
+res.mart <- residuals(reg.cox, type = "martingale")
+
+plot(veteranos$idade, res.mart,
+     xlab = "Idade",
+     ylab = "Resíduos martingale")
+abline(h = 0, lty = 2)
+
+plot(veteranos$terapAnt, res.mart,
+     xlab = "terapAnt",
+     ylab = "Resíduos martingale")
+abline(h = 0, lty = 2)
+
+plot(veteranos$cells, res.mart,
+     xlab = "cells",
+     ylab = "Resíduos martingale")
+abline(h = 0, lty = 2)
+
+plot(veteranos$kpontuac, res.mart,
+     xlab = "kpontuac",
+     ylab = "Resíduos martingale")
+abline(h = 0, lty = 2)
+```
+
+Não parece ter padrões claros.
+
+# Letra F - Modelos de Riscos Proporcionais?
+
+Da forma atual parece que não dá para satisfazer a suposição de riscos proporcionais.
+
+Individualmente, pelo teste de resíduos de Schoenfeld, variáveis "cell" e "kpontuac" não parecem satisfazer risco proporcional.
+
+Vou testar agora sem isso.
+
+```{r}
+
+reg.cox_alt <- coxph(
+  Surv(tempo, evento) ~ factor(tto) + idade + terapAnt,
+  data = veteranos
+)
+
+ajuste.cox_alt <- survfit(reg.cox_alt)
+
+plot(
+  ajuste.cox_alt,
+  xlab = "Tempo",
+  ylab = "S(t)",
+  main = "Curva de sobrevivência ajustada - Cox",
+  lwd = 2
+)
+```
+
+```{r}
+
+teste.ph_alt <- cox.zph(reg.cox_alt)
+teste.ph_alt
+```
+
+Agora sim esses p values são maiores que 0,05 e não tenho evidência contra riscos proporcionais. Porém, menos variáveis descritivas.
+
+```{r}
+
+AIC(reg.cox, reg.cox_alt)
+BIC(reg.cox, reg.cox_alt)
+```
+
+Vendo superficialemente, ocorre o que era de se esperar: piorou o modelo, mas ele não viola proporcionalidade.
