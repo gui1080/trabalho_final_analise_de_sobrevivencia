@@ -246,12 +246,23 @@ dados_delta <- gera_rbs(y, params_sigma)
 ggplot(dados_delta, aes(x = y, y = densidade, color = parametro)) +
   geom_line(linewidth = 1) +
   labs(
-    title = "Densidade Birnbaum-Saunders Reparametrizada variando forma",
+    #title = "Densidade Birnbaum-Saunders Reparametrizada variando forma",
     x = "y",
     y = "f(y)",
     color = "Parâmetros"
   ) +
-  theme_minimal() + coord_cartesian(xlim = c(0, 1))
+  scale_color_discrete(
+    labels = c(
+      expression(mu == 1*","~delta == 0.25),
+      expression(mu == 1*","~delta == 0.5),
+      expression(mu == 1*","~delta == 0.75),
+      expression(mu == 1*","~delta == 1),
+      expression(mu == 1*","~delta == 1.5),
+      expression(mu == 1*","~delta == 5)
+    )
+  ) +
+  theme_minimal() +
+  coord_cartesian(xlim = c(0, 1))
 ```
 
 ```{r}
@@ -259,10 +270,20 @@ ggplot(dados_delta, aes(x = y, y = densidade, color = parametro)) +
 ggplot(dados_delta, aes(x = y, y = acumulada, color = parametro)) +
   geom_line(linewidth = 1) +
   labs(
-    title = "FDA de Birnbaum-Saunders Reparametrizada variando forma",
+    #title = "FDA de Birnbaum-Saunders Reparametrizada variando forma",
     x = "y",
     y = "f(y)",
     color = "Parâmetros"
+  )  +
+  scale_color_discrete(
+    labels = c(
+      expression(mu == 1*","~delta == 0.25),
+      expression(mu == 1*","~delta == 0.5),
+      expression(mu == 1*","~delta == 0.75),
+      expression(mu == 1*","~delta == 1),
+      expression(mu == 1*","~delta == 1.5),
+      expression(mu == 1*","~delta == 5)
+    )
   ) +
   theme_minimal() + coord_cartesian(xlim = c(0, 7.5))
 ```
@@ -272,10 +293,20 @@ ggplot(dados_delta, aes(x = y, y = acumulada, color = parametro)) +
 ggplot(dados_delta, aes(x = y, y = hazard, color = parametro)) +
   geom_line(linewidth = 1) +
   labs(
-    title = "Hazard Birnbaum-Saunders Reparametrizada variando a forma",
+    #title = "Hazard Birnbaum-Saunders Reparametrizada variando a forma",
     x = "y",
     y = "f(y)",
     color = "Parâmetros"
+  )  +
+  scale_color_discrete(
+    labels = c(
+      expression(mu == 1*","~delta == 0.25),
+      expression(mu == 1*","~delta == 0.5),
+      expression(mu == 1*","~delta == 0.75),
+      expression(mu == 1*","~delta == 1),
+      expression(mu == 1*","~delta == 1.5),
+      expression(mu == 1*","~delta == 5)
+    )
   ) +
   theme_minimal() + coord_cartesian(xlim = c(0, 2.5))
 ```

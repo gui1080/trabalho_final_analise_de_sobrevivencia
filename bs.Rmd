@@ -1,7 +1,11 @@
 ---
-title: "bs_extrafail_package"
+title: "Birnbaum-Saunders Reparametrizada"
 output: html_document
 ---
+
+Código reproduzido dos autores:
+
+LEÃO, Jeremias; LEIVA, Víctor; SAULO, Helton; TOMAZELLA, Vera. A survival model with Birnbaum–Saunders frailty for uncensored and censored cancer data. Brazilian Journal of Probability and Statistics, v. 32, n. 4, p. 707–729, 2018. DOI: 10.1214/17-BJPS360.
 
 ```{r}
 
@@ -26,6 +30,9 @@ library(numDeriv)
 library(lattice)
 library(HSAUR)
 
+```
+
+```{r}
 
 
 ##################################################################
@@ -44,6 +51,9 @@ uncsurv_BS <- function(t,delta,lambda){
   
   return(st)
 }
+```
+
+```{r}
 
 ##################################################################
 ## Unconditional Hazard Function of the BS frailty model
@@ -56,6 +66,9 @@ unchazd_BS <- function(t,delta,lambda){
   return(ht)
   
 }
+```
+
+```{r}
 
 ##################################################################
 ## Log Likelihood Function of BS Frailty Model (Exp - baseline)
@@ -81,6 +94,9 @@ log.lik_BSHE <- function(par,y,cens){
   return (loglik)
 }
 
+```
+
+```{r}
 
 ##################################################################
 ##################################################################
@@ -99,6 +115,10 @@ CHR_base <- function(t,alpha,eta){
   
   return(chr)
 }
+```
+
+```{r}
+
 ##################################################################
 # Hazard Rate baseline - Weibull
 ##################################################################
@@ -108,6 +128,9 @@ HR_base <- function(t,alpha,eta){
   hr <- (eta*(t^(eta-1)))/(alpha^eta)
   return(hr)
 }
+```
+
+```{r}
 
 ##################################################################
 # Unconditional survival
@@ -125,6 +148,9 @@ unc_sf <- function(t,alpha,eta,delta){
   return(usf)
   
 }
+```
+
+```{r}
 
 ###################################
 # Unconditional hazard
@@ -141,7 +167,9 @@ unc_hz <- function(t,alpha,eta,delta){
   return(uhr)
   
 }
+```
 
+```{r}
 
 ####################################################
 # Log Likelihood Function of BS Frailty Model
@@ -170,6 +198,9 @@ log.lik_BS_weibullHE <- function(par,y,cens){
   
   return (loglik)
 }
+```
+
+```{r}
 
 ##################################################################
 ##################################################################
@@ -191,6 +222,9 @@ unc_sf_logn <- function(t,delta,pmu,psig){
   return(usf)
   
 }
+```
+
+```{r}
 
 ##################################################################
 # Unconditional hazard
@@ -207,6 +241,9 @@ unc_hz_logn <- function(t,delta,pmu,psig){
   return(uhr)
   
 }
+```
+
+```{r}
 
 
 ####################################################
@@ -237,6 +274,9 @@ log.lik_BS_lognHLN <- function(par,y,cens){
   return (loglik)
 }
 
+```
+
+```{r}
 
 ## computes TTT plot and Barlow-Proschan's test for censored and uncensored data set
 TTTplot <- function(time,cens=NULL)
@@ -282,6 +322,9 @@ TTTplot <- function(time,cens=NULL)
   dev.off()
 }
 
+```
+
+```{r}
 
 # Reading Data Application 2  
 
@@ -290,14 +333,20 @@ data("cancer",package="survival")
 times = veteran$time
 status = veteran$status
 
+```
 
+```{r}
 
-#TTTplot(time=times,cens=status)
-#ekm <- survfit(Surv(times,status)~1,conf.int = FALSE)
-#plot(ekm,xlab="t", ylab="st")
+TTTplot(time=times,cens=status)
+ekm <- survfit(Surv(times,status)~1,conf.int = FALSE)
+plot(ekm,xlab="t", ylab="st")
+
+```
+
+```{r}
 
 ## 1
-# Estimatin parameter values of BS frailty Exponential
+# Estimating parameter values of BS frailty Exponential
 esti_BS <- mlebs(times)
 chuteDelta  <- 2/(esti_BS$alphabsEstimate^2);chuteDelta
 chuteLambda <- fitdistr(times,densfun="exponential")
